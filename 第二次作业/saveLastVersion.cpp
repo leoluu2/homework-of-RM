@@ -1,5 +1,5 @@
-//目前这个代码不会报错，但是有错误，他推理有问题，一直输出一个值
-//推测可能是模型导出时的问题，也可能是这个代码的问题
+// 能跑通，但是输出的结果不在0-9范围内
+// 初步考虑是onnx模型问题，等待起床之后用python分析一下
 
 //别忘跑之前roscore！！！！！
 
@@ -15,46 +15,44 @@
 #include <ros/package.h>
 #include <image_transport/image_transport.h>
 
-// #include <cpu_execution_provider.h>
 
 ros::Publisher classification_pub;
-size_t num_input_nodes,num_output_nodes;
-// std::vector<const char*> input_node_names,output_node_names;
+// size_t num_input_nodes,num_output_nodes;
 std::vector<const char*> input_node_names = {"actual_input"};
 std::vector<const char*> output_node_names = {"actual_output"};
 std::vector<Ort::Value> ort_inputs;
 int num_classes = 10;
 
 // // 初始化ONNX Runtime环境
-    Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNX_Runtime");
-    Ort::SessionOptions session_options;
-    // session_options.SetIntraOpNumThreads(1);
-    // //创建ONNX模型会话，后面可以使用该会话进行推理
-    //注意路径，这里是相对于catkin_ws的位置，否则会failed to download model
-    Ort::Session onnx_session(env, "./src/detect_pkg/src/mnist_model.onnx", session_options);
-    Ort::AllocatorWithDefaultOptions allocator;//打印模型的输入层：node_name,types,shape,stc
+Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNX_Runtime");
+Ort::SessionOptions session_options;
+// session_options.SetIntraOpNumThreads(1);
+// //创建ONNX模型会话，后面可以使用该会话进行推理
+//注意路径，这里是相对于catkin_ws的位置，否则会failed to download model
+Ort::Session onnx_session(env, "./src/detect_pkg/src/mnist_model.onnx", session_options);
+Ort::AllocatorWithDefaultOptions allocator;//打印模型的输入层：node_name,types,shape,stc
 std::vector<int64_t> input_node_dims = {1,1,28, 28};
 size_t input_tensor_size = 1*1*28*28;//这里要和dims统一
 
 
 
-// softmax 函数的实现
-void softmax(float* data, int size) {
-    // 找到最大值（用于数值稳定性）
-    float max_val = *std::max_element(data, data + size);
+// // softmax 函数的实现
+// void softmax(float* data, int size) {
+//     // 找到最大值（用于数值稳定性）
+//     float max_val = *std::max_element(data, data + size);
 
-    // 计算指数并求和
-    float sum_exp = 0.0;
-    for (int i = 0; i < size; ++i) {
-        data[i] = std::exp(data[i] - max_val);
-        sum_exp += data[i];
-    }
+//     // 计算指数并求和
+//     float sum_exp = 0.0;
+//     for (int i = 0; i < size; ++i) {
+//         data[i] = std::exp(data[i] - max_val);
+//         sum_exp += data[i];
+//     }
 
-    // 归一化
-    for (int i = 0; i < size; ++i) {
-        data[i] /= sum_exp;
-    }
-}
+//     // 归一化
+//     for (int i = 0; i < size; ++i) {
+//         data[i] /= sum_exp;
+//     }
+// }
 
 
 // 注意这里是imageConstPtr 而不是ImagePtr！！！！！，否则报错到崩溃
@@ -67,10 +65,12 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg,sensor_msgs::image_encodings::BGR8);
     cv::Mat gray_img;
     cv::cvtColor(cv_ptr->image, gray_img, cv::COLOR_BGR2GRAY);
-    
+    // cv::imshow("imgGray",gray_img);
+    // cv::waitKey(0);
+
     // 缩放图像到24x24
     cv::Mat resized_img;
-    cv::resize(gray_img, resized_img, cv::Size(24, 24));
+    cv::resize(gray_img, resized_img, cv::Size(28, 28));
     // printf("连到detect——call回调函数了\n");测试
     // cv::imshow("img",resized_img);测试
 
@@ -81,24 +81,20 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
 
     //添加模型推理
 
-    // // // 初始化ONNX Runtime环境
-    // Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNX_Runtime");
-    // Ort::SessionOptions session_options;
-    // session_options.SetIntraOpNumThreads(1);
-    // // //创建ONNX模型会话，后面可以使用该会话进行推理
-    // //注意路径，这里是相对于catkin_ws的位置，否则会failed to download model
-    // Ort::Session onnx_session(env, "./src/detect_pkg/src/mnist_model.onnx", session_options);
-    // Ort::AllocatorWithDefaultOptions allocator;//打印模型的输入层：node_name,types,shape,stc
+    // std::vector<float> input_tensor_values(input_tensor_size);
+    // for (unsigned int i = 0; i < input_tensor_size; i++)
+    //     input_tensor_values[i] = (float)i / (input_tensor_size + 1);
+    // // create input tensor object from data values
+    auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(),
+    //      input_tensor_size, input_node_dims.data(), 4);//这里的4是指input_node_dims的维度
+    // assert(input_tensor.IsTensor());
 
-    //  // print number of model input nodes
-    // size_t num_input_nodes = onnx_session.GetInputCount();
-    // // char* input_name = onnx_session.GetInputName(0, allocator);
-    // // std::vector<const char*> input_node_names = {input_name};
-    // // Ort::GetApi().ReleaseValue(input_name);//严谨
-    // std::vector<const char*> input_node_names = {"actual_input"};
-    // std::vector<const char*> output_node_names = {"actual_output"}; 
+    // // // std::vector<Ort::Value> ort_inputs;//这个需要放在这里
+    // ort_inputs.clear();
+    // ort_inputs.push_back(std::move(input_tensor));
 
-    // int num_classes = 10;
+
     // size_t input_tensor_size = 1*1*28*28;//这里要和dims统一
     // //// 创建输入tensor
     // // ONNX模型的输入要求，需要创建适当形状的输入Tensor，并将图像数据填充到其中
@@ -107,15 +103,7 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     // // Ort::Value 的创建需要提供关于张量的信息，包括内存信息、数据类型、形状和大小
     // // dims - batch_size,channels,height,width
     // std::vector<int64_t> input_node_dims = {1,1,28, 28};
-    // // size_t input_tensor_size = 10 * 20; 
-    // std::vector<float> input_tensor_values(input_tensor_size);
-    // for (unsigned int i = 0; i < input_tensor_size; i++)
-    //     input_tensor_values[i] = (float)i / (input_tensor_size + 1);
-    // // create input tensor object from data values
-    // auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(),
-    //      input_tensor_size, input_node_dims.data(), 4);//这里的4是指input_node_dims的维度
-    // assert(input_tensor.IsTensor());
+    
 
     // std::vector<Ort::Value> ort_inputs;
     // ort_inputs.push_back(std::move(input_tensor));
@@ -124,38 +112,44 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     //---------------------------------------------------------------------
 
     // 更新 ort_inputs 向量内容
-    // std::vector<float> input_tensor_values(resized_img.data, resized_img.data + resized_img.total());
-    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
-    //     allocator, input_tensor_values.data(), input_tensor_values.size(),
-    //     input_node_dims.data(), input_node_dims.size());
+    std::vector<float> input_tensor_values(resized_img.data, resized_img.data + resized_img.total());
+    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
+        memory_info, input_tensor_values.data(), input_tensor_values.size(),
+        input_node_dims.data(), input_node_dims.size());
     // ort_inputs = {std::move(input_tensor)};
+    ort_inputs.clear();
+    ort_inputs.push_back(std::move(input_tensor));
 
+    // auto output_tensors = onnx_session.Run(
+    //         Ort::RunOptions{nullptr}, input_node_names.data(), 
+    //         ort_inputs.data(), ort_inputs.size(), output_node_names.data(), 1);
+    // // auto output_tensors = onnx_session.Run(Ort::RunOptions{nullptr}, input_node_names.data(), ort_inputs.data(), ort_inputs.size(), nullptr, 0);
     auto output_tensors = onnx_session.Run(
             Ort::RunOptions{nullptr}, input_node_names.data(), 
             ort_inputs.data(), ort_inputs.size(), output_node_names.data(), 1);
-    // auto output_tensors = onnx_session.Run(Ort::RunOptions{nullptr}, input_node_names.data(), ort_inputs.data(), ort_inputs.size(), nullptr, 0);
-
+    
     
     // Get pointer to output tensor float values
     float* output_data = output_tensors[0].GetTensorMutableData<float>();
-    // float* floatarr_mask = output_tensors[1].GetTensorMutableData<float>();
-        // printf("Done!\n");
-        // printf("%lf\n",*floatarr);
+    int predicted_class = static_cast<int>(output_data[0]);
+    printf("%d\n",predicted_class);
+    
+///----------------------------------softmax处理，但是我的模型输出直接就是预测结果，这一步应该不需要
+    // // 对模型输出进行 softmax 处理
+    // softmax(output_data, num_classes);
 
-    // 对模型输出进行 softmax 处理
-    softmax(output_data, num_classes);
+    // // 假设输出是概率分布，找到最大概率的索引即为分类结果
+    // float max_probability = output_data[0];
+    // int max_index = 0;
 
-    // 假设输出是概率分布，找到最大概率的索引即为分类结果
-    float max_probability = output_data[0];
-    int max_index = 0;
-
-    for (int i = 1; i < num_classes; ++i) {
-        if (output_data[i] > max_probability) {
-            max_probability = output_data[i];
-            max_index = i;
-        }
-    }
-    printf("%d\n",max_index);
+    // for (int i = 1; i < num_classes; ++i) {
+    //     if (output_data[i] > max_probability) {
+    //         max_probability = output_data[i];
+    //         max_index = i;
+    //     }
+    // }
+    // printf("%d\n",max_index);
+//---------------------------------------------------
 
     // // 发布分类信息
     // std_msgs::Int32 classification_msg;
@@ -163,16 +157,7 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     // classification_pub.publish(classification_msg);
 }
 
-/*
-void detect_callback(const sensor_msgs::ImageConstPtr& msg){
-    // cv_bridge::CvImagePtr cv_ptr;
-    // try {
-    //     cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-    // } catch (cv_bridge::Exception& e) {
-    //     ROS_ERROR("cv_bridge exception: %s", e.what());
-    //     return;
-    // }
-}*/
+
 //只有初始化之后的节点才能和ros产生连接
 int main(int argc, char *argv[])
 {
@@ -202,25 +187,10 @@ int main(int argc, char *argv[])
     // std::vector<const char*> output_node_names(num_output_nodes);
     // std::vector<int64_t> input_node_dims;
 
-        //添加模型推理
 
-    // // // 初始化ONNX Runtime环境
-    // Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNX_Runtime");
-    // Ort::SessionOptions session_options;
-    // session_options.SetIntraOpNumThreads(1);
-    // // //创建ONNX模型会话，后面可以使用该会话进行推理
-    // //注意路径，这里是相对于catkin_ws的位置，否则会failed to download model
-    // Ort::Session onnx_session(env, "./src/detect_pkg/src/mnist_model.onnx", session_options);
-    // Ort::AllocatorWithDefaultOptions allocator;//打印模型的输入层：node_name,types,shape,stc
 
-     // print number of model input nodes
-    size_t num_input_nodes = onnx_session.GetInputCount();
-    // char* input_name = onnx_session.GetInputName(0, allocator);
-    // std::vector<const char*> input_node_names = {input_name};
-    // Ort::GetApi().ReleaseValue(input_name);//严谨
-    // input_node_names = {"actual_input"};
-    // output_node_names = {"actual_output"}; 
-
+    // num_input_nodes = onnx_session.GetInputCount();
+    
    
     // size_t input_tensor_size = 1*1*28*28;//这里要和dims统一
     //// 创建输入tensor
@@ -233,18 +203,18 @@ int main(int argc, char *argv[])
     // size_t input_tensor_size = 10 * 20; 
 
 
-    std::vector<float> input_tensor_values(input_tensor_size);
-    for (unsigned int i = 0; i < input_tensor_size; i++)
-        input_tensor_values[i] = (float)i / (input_tensor_size + 1);
-    // create input tensor object from data values
-    auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(),
-         input_tensor_size, input_node_dims.data(), 4);//这里的4是指input_node_dims的维度
-    assert(input_tensor.IsTensor());
+    // std::vector<float> input_tensor_values(input_tensor_size);
+    // for (unsigned int i = 0; i < input_tensor_size; i++)
+    //     input_tensor_values[i] = (float)i / (input_tensor_size + 1);
+    // // create input tensor object from data values
+    // auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(),
+    //      input_tensor_size, input_node_dims.data(), 4);//这里的4是指input_node_dims的维度
+    // assert(input_tensor.IsTensor());
 
-    // // std::vector<Ort::Value> ort_inputs;//这个需要放在这里
-    ort_inputs.clear();
-    ort_inputs.push_back(std::move(input_tensor));
+    // // // std::vector<Ort::Value> ort_inputs;//这个需要放在这里
+    // ort_inputs.clear();
+    // ort_inputs.push_back(std::move(input_tensor));
 
 
     //usb_cam默认使用"/usb_cam/image_raw"作为话题名称
