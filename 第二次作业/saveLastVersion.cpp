@@ -1,5 +1,5 @@
-// 能跑通，但是输出的结果不在0-9范围内
-// 初步考虑是onnx模型问题，等待起床之后用python分析一下
+//能跑通，功能实现了，但是图片预测结果范围不是0-9
+//就算我给他的图片不对，那也应该输出0-9之间的数
 
 //别忘跑之前roscore！！！！！
 
@@ -81,20 +81,9 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
 
     //添加模型推理
 
-    // std::vector<float> input_tensor_values(input_tensor_size);
-    // for (unsigned int i = 0; i < input_tensor_size; i++)
-    //     input_tensor_values[i] = (float)i / (input_tensor_size + 1);
-    // // create input tensor object from data values
+
     auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(),
-    //      input_tensor_size, input_node_dims.data(), 4);//这里的4是指input_node_dims的维度
-    // assert(input_tensor.IsTensor());
-
-    // // // std::vector<Ort::Value> ort_inputs;//这个需要放在这里
-    // ort_inputs.clear();
-    // ort_inputs.push_back(std::move(input_tensor));
-
-
+    
     // size_t input_tensor_size = 1*1*28*28;//这里要和dims统一
     // //// 创建输入tensor
     // // ONNX模型的输入要求，需要创建适当形状的输入Tensor，并将图像数据填充到其中
@@ -105,14 +94,17 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     // std::vector<int64_t> input_node_dims = {1,1,28, 28};
     
 
-    // std::vector<Ort::Value> ort_inputs;
-    // ort_inputs.push_back(std::move(input_tensor));
-    // // ort_inputs.push_back(std::move(input_mask_tensor));
-    // // score model & input tensor, get back output tensor
     //---------------------------------------------------------------------
 
     // 更新 ort_inputs 向量内容
-    std::vector<float> input_tensor_values(resized_img.data, resized_img.data + resized_img.total());
+    // std::vector<float> input_tensor_values(resized_img.data, resized_img.data + resized_img.total());
+    std::vector<float> input_tensor_values;
+    for (int i = 0; i < resized_img.rows; ++i) {
+        for (int j = 0; j < resized_img.cols; ++j) {
+            // 我的MNIST模型中没有进行归一化，所以这边也不需要归一化
+            input_tensor_values.push_back(resized_img.at<uchar>(i, j));  
+        }
+    }
     Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
         memory_info, input_tensor_values.data(), input_tensor_values.size(),
         input_node_dims.data(), input_node_dims.size());
@@ -132,7 +124,7 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     // Get pointer to output tensor float values
     float* output_data = output_tensors[0].GetTensorMutableData<float>();
     int predicted_class = static_cast<int>(output_data[0]);
-    printf("%d\n",predicted_class);
+    // printf("%d\n",predicted_class);
     
 ///----------------------------------softmax处理，但是我的模型输出直接就是预测结果，这一步应该不需要
     // // 对模型输出进行 softmax 处理
@@ -151,10 +143,12 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     // printf("%d\n",max_index);
 //---------------------------------------------------
 
-    // // 发布分类信息
-    // std_msgs::Int32 classification_msg;
-    // classification_msg.data = max_index;
-    // classification_pub.publish(classification_msg);
+// ----------------------------------------------------
+
+    // 发布分类信息
+    std_msgs::Int32 classification_msg;
+    classification_msg.data = predicted_class;
+    classification_pub.publish(classification_msg);
 }
 
 
@@ -188,45 +182,16 @@ int main(int argc, char *argv[])
     // std::vector<int64_t> input_node_dims;
 
 
-
-    // num_input_nodes = onnx_session.GetInputCount();
-    
-   
-    // size_t input_tensor_size = 1*1*28*28;//这里要和dims统一
-    //// 创建输入tensor
-    // ONNX模型的输入要求，需要创建适当形状的输入Tensor，并将图像数据填充到其中
-    // 这通常涉及使用ONNX Runtime提供的API来创建和填充Tensor
-    // Ort::MemoryInfo 允许你描述将要创建的张量的内存信息，包括分配器和内存类型
-    // Ort::Value 的创建需要提供关于张量的信息，包括内存信息、数据类型、形状和大小
-    // dims - batch_size,channels,height,width
-    
-    // size_t input_tensor_size = 10 * 20; 
-
-
-    // std::vector<float> input_tensor_values(input_tensor_size);
-    // for (unsigned int i = 0; i < input_tensor_size; i++)
-    //     input_tensor_values[i] = (float)i / (input_tensor_size + 1);
-    // // create input tensor object from data values
-    // auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-    // Ort::Value input_tensor = Ort::Value::CreateTensor<float>(memory_info, input_tensor_values.data(),
-    //      input_tensor_size, input_node_dims.data(), 4);//这里的4是指input_node_dims的维度
-    // assert(input_tensor.IsTensor());
-
-    // // // std::vector<Ort::Value> ort_inputs;//这个需要放在这里
-    // ort_inputs.clear();
-    // ort_inputs.push_back(std::move(input_tensor));
-
-
     //usb_cam默认使用"/usb_cam/image_raw"作为话题名称
     //// ros::Subscriber sub = nh.subscribe("/usb_cam/image_raw",10,detect_callback);
     //通常使用image_transport订阅图形话题
     image_transport::ImageTransport it(nh);
     image_transport::Subscriber sub = it.subscribe("/usb_cam/image_raw",10,detect_callback);
-    printf("完成回调\n");
+    // printf("完成回调\n");
 
 
     // 设置分类信息发布器
-    // classification_pub = nh.advertise<std_msgs::Int32>("mnist_classification", 10);
+    classification_pub = nh.advertise<std_msgs::Int32>("mnist_classification", 10);
 
     // ros::Rate loop_rate(10);//1s发10条
 
