@@ -1,6 +1,3 @@
-//能跑通，功能实现了，但是图片预测结果范围不是0-9
-//就算我给他的图片不对，那也应该输出0-9之间的数
-
 //别忘跑之前roscore！！！！！
 
 #include <ros/ros.h>
@@ -105,6 +102,7 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
             input_tensor_values.push_back(resized_img.at<uchar>(i, j));  
         }
     }
+
     Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
         memory_info, input_tensor_values.data(), input_tensor_values.size(),
         input_node_dims.data(), input_node_dims.size());
@@ -112,15 +110,12 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     ort_inputs.clear();
     ort_inputs.push_back(std::move(input_tensor));
 
-    // auto output_tensors = onnx_session.Run(
-    //         Ort::RunOptions{nullptr}, input_node_names.data(), 
-    //         ort_inputs.data(), ort_inputs.size(), output_node_names.data(), 1);
-    // // auto output_tensors = onnx_session.Run(Ort::RunOptions{nullptr}, input_node_names.data(), ort_inputs.data(), ort_inputs.size(), nullptr, 0);
+     
     auto output_tensors = onnx_session.Run(
             Ort::RunOptions{nullptr}, input_node_names.data(), 
             ort_inputs.data(), ort_inputs.size(), output_node_names.data(), 1);
     
-    
+    // printf("%d\n",output_tensors.size());
     // Get pointer to output tensor float values
     float* output_data = output_tensors[0].GetTensorMutableData<float>();
     int predicted_class = static_cast<int>(output_data[0]);
@@ -130,16 +125,17 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
     // // 对模型输出进行 softmax 处理
     // softmax(output_data, num_classes);
 
-    // // 假设输出是概率分布，找到最大概率的索引即为分类结果
-    // float max_probability = output_data[0];
-    // int max_index = 0;
+    // 假设输出是概率分布，找到最大概率的索引即为分类结果
+    float max_probability = output_data[0];
+    int max_index = 0;
 
-    // for (int i = 1; i < num_classes; ++i) {
-    //     if (output_data[i] > max_probability) {
-    //         max_probability = output_data[i];
-    //         max_index = i;
-    //     }
-    // }
+    for (int i = 1; i < num_classes; ++i) {
+        // printf("%lf ",output_data[i]);
+        if (output_data[i] > max_probability) {
+            max_probability = output_data[i];
+            max_index = i;
+        }
+    }
     // printf("%d\n",max_index);
 //---------------------------------------------------
 
@@ -147,10 +143,13 @@ void detect_callback(const sensor_msgs::ImageConstPtr& msg){//别傻乎乎传值
 
     // 发布分类信息
     std_msgs::Int32 classification_msg;
-    classification_msg.data = predicted_class;
+    classification_msg.data = max_index;
     classification_pub.publish(classification_msg);
 }
 
+void check_callback(std_msgs::Int32 msg){
+    return ;
+}
 
 //只有初始化之后的节点才能和ros产生连接
 int main(int argc, char *argv[])
@@ -187,6 +186,8 @@ int main(int argc, char *argv[])
     //通常使用image_transport订阅图形话题
     image_transport::ImageTransport it(nh);
     image_transport::Subscriber sub = it.subscribe("/usb_cam/image_raw",10,detect_callback);
+    ros::Subscriber cam_sub = nh.subscribe("mnist_classification",10,check_callback);
+    // image_transport::Subscriber cam_sub = it.subscribe("mnist_classification",10,check_callback);
     // printf("完成回调\n");
 
 
